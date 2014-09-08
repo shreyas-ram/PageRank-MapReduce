@@ -1,0 +1,71 @@
+Project 1 Report
+Manish Geverchand Jain
+Shreyas Seetharam
+
+
+A) STEPS UNDERTAKEN TO DEVELOP THE PROJECT
+
+I. HADOOP INSTALLATION
+	Downloaded and installed Hadoop version 1.0.3 on the local system and the necessary configuration was made for the development purpose. 
+
+II. DESIGN
+	A flow diagram of Map-Reduce tasks was created as follows:
+The XML input data file was processes using the XMLInputFormat.class from Apache's Mahout library. This class helped in divinding the file with records between <page> and </page> tags.
+	
+Step 1: Extracting Title and Text from the each <page> XML tag data: Used Java Regex library to extract the Titles and Wikilinks. To remove duplicates wikiLinks, Hashset was used. Here, for every <title> tag found, a counter was incremented. At the end of the map phase, the pageCount N is found.
+		Mapper: WikiLinkFinderMapper
+				
+		Reducer: WikiLinkFinderReducer
+			
+Step 2: Removing Red Links: With all the weblinks read, we associated a <RedLinkflag> tag and then scanned through the entire list to remove all those links that do not have <RedLinkflag> tag associated with it.  At the end of this step, the initial data needed for the power iteration method is generated in the folder <bucket-name>/tmp/iter0 folder.
+		Mapper: RedLinkRemoverMapper
+			
+		Reducer: RedLinkRemoverReducer
+			
+Step 3: Now that we have the outlink graph and page count N. We format these two data into the format asked into the files PageRank.outlink.out and PageRank.n.out respectively in the <bucket-name>/results forlder.
+		Mapper: MultipleOutputMapper
+
+		Reducer: MultipleOutputReducer
+Step 4: We now run the RankCalulation job 8 times over data at iter0 folder. Each ith iteration reads from iter'i' and write to the iter'i+1' folder. The new Rank is updated in the outlink graph after iteration.
+		Mappper: RankCalculatorMapper
+		Reducer: RankCalculatorReducer
+
+Step 5: Descending Order: It orders the pages in descending order of page rank and outputs the pages with rank > 5/N
+		Mapper: orderRankMapper
+			Input <Key, Value> = <Title, N_Rank_WebLinks>
+			Output <Key, Value> = <Rank, Title>
+		
+		Reducer: orderRankReducer
+			Input <Key, Value> = <Rank, Title>
+			Output <Key, Value> = <Title, Rank>
+
+
+B) DIFFICULTIES FACED and KNOWLEDGE GAINED
+
+I) Removing Redlinks- Removing Redlinks was a difficult task. The issue was handled by producing the inlink graph first and then using that to generate the OutLinks graph while removing all the RedLinks.
+
+II) Propagating the Total Count- Propagating the Total Count from the mapper to the reducer took some effort. However, this was achieved by using the counters present as shown in the code snipet below:
+		JobClient client;
+		client = new JobClient(conf);
+		RunningJob parentJob = client.getJob(JobID.forName(conf.get("mapred.job.id")));
+		InputPageCounter = parentJob.getCounters().getCounter(PageRank.Counters.INPUT_TITLES);
+
+III)Combining the files into a single file and store in the desired Location- Due to the file naming limitations of EMR, it was difficult to place the files in the required directory structure and to merge the files. To help with this, the MutipleOutputClass was used to write to multiple files while in the same Job and the merging was handled using FileUtil.copymerge() functionality.
+		FileSystem fs = FileSystem.get(new URI("s3n://mjain-ids/results/"), conf); 
+		FileUtil.copyMerge(fs, new Path(outputPath), fs, new Path(resultPath), false,new Configuration( conf),""); 
+
+IV) Sorted Output- To get the sorted file, the <key,value> pair is inverted to make the rank as the key and passed to a single reducer. To sort the records in descending order, WritableComparator was overriden to define the code for soeting in descending order.
+		public int compare(WritableComparable a, WritableComparable b) {
+        	DoubleWritable o1 = (DoubleWritable) a;
+        	DoubleWritable o2 = (DoubleWritable) b;
+        	if(o1.get() < o2.get()) {
+            		return 1;
+        	}else if(o1.get() > o2.get()) {
+           		 return -1;
+        		}else {
+            			return 0;
+        		}
+    		}
+
+
+
